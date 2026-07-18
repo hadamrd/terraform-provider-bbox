@@ -92,10 +92,7 @@ func (p *bboxProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	// by writing them back before constructing the client. Session lookups performed
 	// during EnsureAuth will observe the values set here.
 	client.BaseURL = baseURL
-	// Note: SessionFile() returns a computed default; there is no setter, so a
-	// non-default session_file is only meaningful once bbox-cli exposes one. For now
-	// we surface the config value via env so downstream tooling can read it.
-	_ = os.Setenv("BBOX_SESSION_FILE", sessionFile)
+	client.SetSessionFile(sessionFile)
 
 	c := client.New(false, retries, timeout)
 

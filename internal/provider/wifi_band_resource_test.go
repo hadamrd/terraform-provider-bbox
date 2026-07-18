@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 )
 
 func TestWifiBandResourceMetadata(t *testing.T) {
@@ -44,15 +45,15 @@ func TestWifiBandResourceSchema(t *testing.T) {
 	}
 }
 
-func TestValidateBand(t *testing.T) {
-	for _, b := range []string{"24", "5", "6"} {
-		if !validateBand(b) {
-			t.Errorf("expected %q valid", b)
-		}
-	}
-	for _, b := range []string{"", "2.4", "5g", "60"} {
-		if validateBand(b) {
-			t.Errorf("expected %q invalid", b)
-		}
+// TestBandHasOneOfValidator asserts the band attr carries at least one
+// schema-level validator. Real accept/reject behaviour is exercised through
+// terraform plan in integration_test.go.
+func TestBandHasOneOfValidator(t *testing.T) {
+	r := NewWifiBandResource()
+	resp := &resource.SchemaResponse{}
+	r.Schema(context.Background(), resource.SchemaRequest{}, resp)
+	band := resp.Schema.Attributes["band"].(schema.StringAttribute)
+	if len(band.Validators) == 0 {
+		t.Fatalf("band attr should have OneOf validator, got 0")
 	}
 }

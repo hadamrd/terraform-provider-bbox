@@ -2,14 +2,15 @@ package provider
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hadamrd/bbox-cli/pkg/client"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -39,11 +40,6 @@ type firewallRuleModel struct {
 	IPVersion types.String `tfsdk:"ip_version"`
 }
 
-var validFirewallProtocols = map[string]bool{
-	"tcp": true, "udp": true, "icmp": true, "esp": true,
-	"ah": true, "icmpv6": true, "igmp": true, "gre": true,
-}
-
 func (r *firewallRuleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_firewall_rule"
 }
@@ -52,10 +48,22 @@ func (r *firewallRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 	resp.Schema = schema.Schema{
 		Description: "A firewall rule on the Bbox.",
 		Attributes: map[string]schema.Attribute{
-			"id":       schema.Int64Attribute{Computed: true, Description: "Router-assigned rule ID."},
-			"name":     schema.StringAttribute{Required: true, Description: "Rule description."},
-			"action":   schema.StringAttribute{Required: true, Description: "Drop or Accept."},
-			"protocol": schema.StringAttribute{Required: true, Description: "tcp/udp/icmp/esp/ah/icmpv6/igmp/gre."},
+			"id":   schema.Int64Attribute{Computed: true, Description: "Router-assigned rule ID."},
+			"name": schema.StringAttribute{Required: true, Description: "Rule description."},
+			"action": schema.StringAttribute{
+				Required:    true,
+				Description: "Drop or Accept.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("Drop", "Accept"),
+				},
+			},
+			"protocol": schema.StringAttribute{
+				Required:    true,
+				Description: "tcp/udp/icmp/esp/ah/icmpv6/igmp/gre.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("tcp", "udp", "icmp", "esp", "ah", "icmpv6", "igmp", "gre"),
+				},
+			},
 			"dst_ip":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("")},
 			"dst_port": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Port or range like 8000-8100."},
 			"src_ip":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("")},
@@ -65,6 +73,9 @@ func (r *firewallRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 				Optional: true, Computed: true,
 				Default:     stringdefault.StaticString("IPv4"),
 				Description: "IPv4 or IPv6.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("IPv4", "IPv6"),
+				},
 			},
 		},
 	}
@@ -77,19 +88,6 @@ func (r *firewallRuleResource) Configure(_ context.Context, req resource.Configu
 		return
 	}
 	r.shared = s
-}
-
-func validateFirewallFields(m firewallRuleModel) error {
-	if a := m.Action.ValueString(); a != "Drop" && a != "Accept" {
-		return fmt.Errorf("action must be Drop or Accept, got %q", a)
-	}
-	if !validFirewallProtocols[m.Protocol.ValueString()] {
-		return fmt.Errorf("protocol %q not one of tcp/udp/icmp/esp/ah/icmpv6/igmp/gre", m.Protocol.ValueString())
-	}
-	if v := m.IPVersion.ValueString(); v != "IPv4" && v != "IPv6" {
-		return fmt.Errorf("ip_version must be IPv4 or IPv6, got %q", v)
-	}
-	return nil
 }
 
 func firewallArgsFromModel(m firewallRuleModel) client.FirewallRuleArgs {
@@ -114,10 +112,6 @@ func (r *firewallRuleResource) Create(ctx context.Context, req resource.CreateRe
 	var plan firewallRuleModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
-		return
-	}
-	if err := validateFirewallFields(plan); err != nil {
-		resp.Diagnostics.AddError("Invalid firewall rule", err.Error())
 		return
 	}
 	newID, err := r.shared.Client.FirewallRuleAdd(firewallArgsFromModel(plan))
@@ -176,10 +170,6 @@ func (r *firewallRuleResource) Update(ctx context.Context, req resource.UpdateRe
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
-		return
-	}
-	if err := validateFirewallFields(plan); err != nil {
-		resp.Diagnostics.AddError("Invalid firewall rule", err.Error())
 		return
 	}
 

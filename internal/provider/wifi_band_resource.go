@@ -4,11 +4,13 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -46,6 +48,9 @@ func (r *wifiBandResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 			"band": schema.StringAttribute{
 				Required:    true,
 				Description: "24, 5, or 6. Immutable.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("24", "5", "6"),
+				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -66,8 +71,6 @@ func (r *wifiBandResource) Configure(_ context.Context, req resource.ConfigureRe
 	}
 	r.shared = s
 }
-
-func validateBand(b string) bool { return b == "24" || b == "5" || b == "6" }
 
 // applyWifi pushes each configured attribute through its respective setter.
 // Unset (null/unknown) attributes are left untouched.
@@ -132,10 +135,6 @@ func (r *wifiBandResource) Create(ctx context.Context, req resource.CreateReques
 	var plan wifiBandModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
-		return
-	}
-	if !validateBand(plan.Band.ValueString()) {
-		resp.Diagnostics.AddAttributeError(path.Root("band"), "Invalid band", "band must be 24, 5, or 6")
 		return
 	}
 	if err := r.applyWifi(plan); err != nil {

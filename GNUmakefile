@@ -11,7 +11,7 @@ else
 BIN_EXT :=
 endif
 
-.PHONY: build install test testacc docs fmt vet lint clean
+.PHONY: build install test testint testacc docs fmt vet lint clean
 
 build:
 	go build -o bin/$(BINARY)$(BIN_EXT) .
@@ -24,9 +24,20 @@ install: build
 test:
 	go test ./... -race -count=1
 
+# Unit-style integration tests: full CRUD driven through terraform, backed by
+# an httptest mock router — no live Bbox needed. Runs whenever TF_ACC is unset.
+testint:
+	go test ./internal/provider/... -run Integration -race -count=1
+
+# Acceptance tests: exercise a REAL Bbox at BBOX_BASE_URL. Refuses to run
+# without TF_ACC=1 so `make test` never trips them.
 testacc:
-	@echo "Acceptance tests require a live Bbox router. Set TF_ACC=1 and BBOX_PASSWORD, then run:"
-	@echo "  TF_ACC=1 go test ./internal/provider/... -run 'TestAcc' -v -timeout 30m"
+ifeq ($(TF_ACC),)
+	@echo "Acceptance tests require a live Bbox router. Set TF_ACC=1 and BBOX_PASSWORD_FILE, then run:"
+	@echo "  TF_ACC=1 BBOX_PASSWORD_FILE=\$$HOME/.bbox-password make testacc"
+else
+	go test ./internal/provider/... -run TestAcc -v -timeout 30m
+endif
 
 docs:
 	@echo "Docs live in docs/ and are hand-maintained; nothing to generate."

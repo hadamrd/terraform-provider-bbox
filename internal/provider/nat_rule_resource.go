@@ -5,13 +5,16 @@ import (
 	"fmt"
 
 	"github.com/hadamrd/bbox-cli/pkg/client"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -37,6 +40,7 @@ type natRuleModel struct {
 	Protocol      types.String `tfsdk:"protocol"`
 	RemoteIP      types.String `tfsdk:"remote_ip"`
 	SkipPortCheck types.Bool   `tfsdk:"skip_port_check"`
+	Enabled       types.Bool   `tfsdk:"enabled"`
 }
 
 func (r *natRuleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -70,12 +74,18 @@ func (r *natRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Optional:    true,
 				Computed:    true,
 				Description: "LAN port. Defaults to external_port.",
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 			"protocol": schema.StringAttribute{
 				Optional:    true,
 				Computed:    true,
 				Default:     stringdefault.StaticString("tcp"),
 				Description: "tcp or udp.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("tcp", "udp"),
+				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -91,6 +101,12 @@ func (r *natRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),
 				Description: "Bypass MAP-T port-range validation.",
+			},
+			"enabled": schema.BoolAttribute{
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(true),
+				Description: "Whether the rule is active.",
 			},
 		},
 	}
@@ -116,12 +132,6 @@ func (r *natRuleResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	proto := plan.Protocol.ValueString()
-	if proto != "tcp" && proto != "udp" {
-		resp.Diagnostics.AddAttributeError(path.Root("protocol"), "Invalid protocol", "must be tcp or udp")
-		return
-	}
-
 	extPort := int(plan.ExternalPort.ValueInt64())
 	if !plan.SkipPortCheck.ValueBool() {
 		if err := checkMAPTRange(r.shared.Client, extPort); err != nil {
@@ -140,8 +150,9 @@ func (r *natRuleResource) Create(ctx context.Context, req resource.CreateRequest
 		ExternalPort: extPort,
 		InternalIP:   plan.TargetIP.ValueString(),
 		InternalPort: intPort,
-		Protocol:     proto,
+		Protocol:     plan.Protocol.ValueString(),
 		RemoteIP:     plan.RemoteIP.ValueString(),
+		Disabled:     !plan.Enabled.ValueBool(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("NAT add failed", err.Error())
@@ -180,6 +191,7 @@ func (r *natRuleResource) Read(ctx context.Context, req resource.ReadRequest, re
 		state.TargetIP = types.StringValue(toStr(m["internalip"]))
 		state.Protocol = types.StringValue(toStr(m["protocol"]))
 		state.RemoteIP = types.StringValue(toStr(m["ipremote"]))
+		state.Enabled = types.BoolValue(toBool(m["enable"]))
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 		return
 	}
@@ -203,6 +215,20 @@ func (r *natRuleResource) Update(ctx context.Context, req resource.UpdateRequest
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	// Fast path: only the enable flag changed — use in-place toggle.
+	if natOnlyEnabledChanged(state, plan) {
+		id := int(state.ID.ValueInt64())
+		if err := r.shared.Client.NATToggleRule(id, plan.Enabled.ValueBool()); err != nil {
+			resp.Diagnostics.AddError("NAT rule toggle failed", err.Error())
+			return
+		}
+		plan.ID = state.ID
+		plan.InternalPort = state.InternalPort
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		return
+	}
+
 	if id := int(state.ID.ValueInt64()); id != 0 {
 		if err := r.shared.Client.NATDel(id); err != nil {
 			resp.Diagnostics.AddError("NAT delete-for-update failed", err.Error())
@@ -210,11 +236,6 @@ func (r *natRuleResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 	}
 
-	proto := plan.Protocol.ValueString()
-	if proto != "tcp" && proto != "udp" {
-		resp.Diagnostics.AddAttributeError(path.Root("protocol"), "Invalid protocol", "must be tcp or udp")
-		return
-	}
 	extPort := int(plan.ExternalPort.ValueInt64())
 	if !plan.SkipPortCheck.ValueBool() {
 		if err := checkMAPTRange(r.shared.Client, extPort); err != nil {
@@ -231,8 +252,9 @@ func (r *natRuleResource) Update(ctx context.Context, req resource.UpdateRequest
 		ExternalPort: extPort,
 		InternalIP:   plan.TargetIP.ValueString(),
 		InternalPort: intPort,
-		Protocol:     proto,
+		Protocol:     plan.Protocol.ValueString(),
 		RemoteIP:     plan.RemoteIP.ValueString(),
+		Disabled:     !plan.Enabled.ValueBool(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("NAT recreate failed", err.Error())
@@ -263,6 +285,20 @@ func (r *natRuleResource) Delete(ctx context.Context, req resource.DeleteRequest
 
 func (r *natRuleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// natOnlyEnabledChanged returns true when the only differing attribute between
+// state and plan is `enabled`. Mirrors firewallOnlyEnabledChanged.
+func natOnlyEnabledChanged(state, plan natRuleModel) bool {
+	if state.Enabled.ValueBool() == plan.Enabled.ValueBool() {
+		return false
+	}
+	return state.Name.ValueString() == plan.Name.ValueString() &&
+		state.ExternalPort.ValueInt64() == plan.ExternalPort.ValueInt64() &&
+		state.TargetIP.ValueString() == plan.TargetIP.ValueString() &&
+		state.InternalPort.ValueInt64() == plan.InternalPort.ValueInt64() &&
+		state.Protocol.ValueString() == plan.Protocol.ValueString() &&
+		state.RemoteIP.ValueString() == plan.RemoteIP.ValueString()
 }
 
 // checkMAPTRange mirrors the CLI's port-range guard. Returns nil when the

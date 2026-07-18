@@ -3,11 +3,13 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -33,11 +35,6 @@ type dynDNSModel struct {
 	Enabled      types.Bool   `tfsdk:"enabled"`
 }
 
-var validDynDNSProviders = map[string]bool{
-	"duckdns": true, "dyndns": true, "no-ip": true,
-	"ovh": true, "duiadns": true, "changeip": true,
-}
-
 func (r *dynDNSResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_dyndns"
 }
@@ -46,9 +43,15 @@ func (r *dynDNSResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 	resp.Schema = schema.Schema{
 		Description: "Singleton config for the router's DynDNS service.",
 		Attributes: map[string]schema.Attribute{
-			"id":            schema.StringAttribute{Computed: true, Description: "Always \"singleton\"."},
-			"provider_name": schema.StringAttribute{Required: true, Description: "duckdns/dyndns/no-ip/ovh/duiadns/changeip."},
-			"hostname":      schema.StringAttribute{Required: true},
+			"id": schema.StringAttribute{Computed: true, Description: "Always \"singleton\"."},
+			"provider_name": schema.StringAttribute{
+				Required:    true,
+				Description: "duckdns/dyndns/no-ip/ovh/duiadns/changeip.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("duckdns", "dyndns", "no-ip", "ovh", "duiadns", "changeip"),
+				},
+			},
+			"hostname": schema.StringAttribute{Required: true},
 			"username": schema.StringAttribute{
 				Optional: true, Computed: true,
 				Default:     stringdefault.StaticString(""),
@@ -94,11 +97,6 @@ func (r *dynDNSResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if !validDynDNSProviders[plan.ProviderName.ValueString()] {
-		resp.Diagnostics.AddAttributeError(path.Root("provider_name"), "Invalid provider",
-			"provider_name must be one of duckdns/dyndns/no-ip/ovh/duiadns/changeip")
-		return
-	}
 	if err := r.apply(plan); err != nil {
 		resp.Diagnostics.AddError("DynDNS apply failed", err.Error())
 		return
@@ -142,11 +140,6 @@ func (r *dynDNSResource) Update(ctx context.Context, req resource.UpdateRequest,
 	var plan dynDNSModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
-		return
-	}
-	if !validDynDNSProviders[plan.ProviderName.ValueString()] {
-		resp.Diagnostics.AddAttributeError(path.Root("provider_name"), "Invalid provider",
-			"provider_name must be one of duckdns/dyndns/no-ip/ovh/duiadns/changeip")
 		return
 	}
 	if err := r.apply(plan); err != nil {
