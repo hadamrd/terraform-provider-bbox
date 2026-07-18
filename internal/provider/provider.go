@@ -127,11 +127,19 @@ func (p *bboxProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 }
 
 func (p *bboxProvider) Resources(_ context.Context) []func() resource.Resource {
-	return nil
+	return []func() resource.Resource{
+		NewNATRuleResource,
+		NewDHCPReservationResource,
+	}
 }
 
 func (p *bboxProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewWANDataSource,
+		NewHostDataSource,
+		NewHostsDataSource,
+		NewDeviceDataSource,
+	}
 }
 
 // pickString applies env-then-default fallback for a string attribute.
