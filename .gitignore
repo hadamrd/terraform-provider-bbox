@@ -1,0 +1,10 @@
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+terraform-provider-bbox
+terraform-provider-bbox.exe
+dist/
+vendor/
+.DS_Store
