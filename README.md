@@ -1,90 +1,109 @@
 # terraform-provider-bbox
 
-Declarative management of the Bouygues Bbox router admin API via Terraform. Backed by the reverse-engineered surface in [hadamrd/bbox-cli](https://github.com/hadamrd/bbox-cli).
+Declaratively manage a Bouygues Bbox router via its reverse-engineered admin API — NAT rules, DHCP reservations, firewall rules, WiFi bands, DynDNS, host metadata, UPnP.
 
-Status: skeleton. No resources / data sources shipped yet (see roadmap below).
+[![CI](https://img.shields.io/github/actions/workflow/status/hadamrd/terraform-provider-bbox/ci.yml?branch=main&label=ci)](https://github.com/hadamrd/terraform-provider-bbox/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/hadamrd/terraform-provider-bbox?include_prereleases&sort=semver)](https://github.com/hadamrd/terraform-provider-bbox/releases)
+[![License](https://img.shields.io/github/license/hadamrd/terraform-provider-bbox)](LICENSE)
 
-## Install (dev-override)
+Backed by [hadamrd/bbox-cli](https://github.com/hadamrd/bbox-cli), so authentication and session caching behave identically to the CLI.
 
-Until the provider is published to the Terraform Registry, run against a local build:
+## Quick start
 
-```powershell
-go build -o $env:USERPROFILE\.terraform.d\plugins\terraform-provider-bbox.exe .
-```
+1. Build and install the provider into the local plugin cache:
 
-Then add to `~/.terraformrc`:
+   ```bash
+   make install
+   ```
 
-```hcl
-provider_installation {
-  dev_overrides {
-    "hadamrd/bbox" = "C:/Users/you/.terraform.d/plugins"
-  }
-  direct {}
-}
-```
+2. Add a `dev_overrides` block to `~/.terraformrc` (until the provider ships to the Registry):
 
-## Example
+   ```hcl
+   provider_installation {
+     dev_overrides {
+       "hadamrd/bbox" = "/home/you/.terraform.d/plugins/registry.terraform.io/hadamrd/bbox/0.1.0/linux_amd64"
+     }
+     direct {}
+   }
+   ```
 
-```hcl
-terraform {
-  required_providers {
-    bbox = {
-      source = "hadamrd/bbox"
-    }
-  }
-}
+3. Drop a `main.tf`:
 
-provider "bbox" {
-  # session_file  = "~/.bbox-session.json"  # optional
-  # password_file = "~/.bbox-password"      # optional
-  # base_url      = "https://mabbox.bytel.fr"
-  # retries       = 2
-  # timeout       = "15s"
-}
+   ```hcl
+   terraform {
+     required_providers {
+       bbox = { source = "hadamrd/bbox" }
+     }
+   }
 
-# (coming in v0.1)
-# data "bbox_wan_ip" "current" {}
-#
-# resource "bbox_nat_rule" "retrobot" {
-#   name     = "retrobot"
-#   protocol = "tcp"
-#   external = 5555
-#   internal = 5555
-#   host_ip  = "192.168.1.42"
-# }
-```
+   provider "bbox" {}
 
-## Configuration
+   data "bbox_wan" "current" {}
 
-| Attribute       | Env                   | Default                      | Description                       |
-| --------------- | --------------------- | ---------------------------- | --------------------------------- |
-| `session_file`  | `BBOX_SESSION_FILE`   | `~/.bbox-session.json`       | Cached login cookies.             |
-| `password_file` | `BBOX_PASSWORD_FILE`  | `~/.bbox-password`           | Admin password file.              |
-| `base_url`      | `BBOX_BASE_URL`       | `https://mabbox.bytel.fr`    | Router admin origin.              |
-| `retries`       | `BBOX_RETRIES`        | `2`                          | Transient network retries.        |
-| `timeout`       | `BBOX_TIMEOUT`        | `15s`                        | HTTP timeout (Go duration).       |
+   resource "bbox_nat_rule" "ssh" {
+     name          = "ssh"
+     external_port = 22222
+     target_ip     = "192.168.1.42"
+     internal_port = 22
+     protocol      = "tcp"
+   }
+   ```
 
-`BBOX_PASSWORD` (env) takes precedence over `password_file`.
+4. Seed the session and plan:
+
+   ```bash
+   bbox login                 # or: export BBOX_PASSWORD=...
+   terraform plan
+   ```
+
+## Feature matrix
+
+### Resources
+
+| Resource                  | Endpoint                     | Notes                                             |
+| ------------------------- | ---------------------------- | ------------------------------------------------- |
+| `bbox_nat_rule`           | `/api/v1/nat/rules`          | Port-forward. Delete+recreate on update.          |
+| `bbox_dhcp_reservation`   | `/api/v1/dhcp/clients`       | Fixed IP for a MAC. Host must be known.           |
+| `bbox_firewall_rule`      | `/api/v1/firewall/rules`     | Drop/Accept for IPv4 or IPv6.                     |
+| `bbox_wifi_band`          | `/api/v1/wireless/*`         | Singleton per band (`24`/`5`/`6`).                |
+| `bbox_dyndns`             | `/api/v1/dyndns`             | Singleton. DuckDNS/no-ip/ovh/etc.                 |
+| `bbox_host`               | `/api/v1/hosts/{id}`         | Rename or block a known LAN host.                 |
+| `bbox_upnp`               | `/api/v1/upnp/igd`           | Singleton toggle.                                 |
+
+### Data sources
+
+| Data source     | Endpoint             | Notes                                |
+| --------------- | -------------------- | ------------------------------------ |
+| `bbox_wan`      | `/api/v1/wan/ip`     | WAN IP + MAP-T port range.           |
+| `bbox_host`     | `/api/v1/hosts`      | Resolve by id/hostname/mac/ip.       |
+| `bbox_hosts`    | `/api/v1/hosts`      | List all hosts.                      |
+| `bbox_device`   | `/api/v1/device`     | Model, serial, firmware, uptime.     |
+
+## Documentation
+
+- Registry-style docs: [`docs/`](docs/) — one page per resource and data source.
+- End-to-end scenarios: [`examples/`](examples/) — `basic`, `nat-declarative`, `dhcp-reservations`, `full-stack`, `data-audit`.
+- Provider config: [`docs/index.md`](docs/index.md).
 
 ## Development
 
-```powershell
-go mod tidy
-go build ./...
-go test ./...
+Requirements: Go 1.22+, Terraform 1.5+.
+
+```bash
+make build       # ./bin/terraform-provider-bbox
+make install     # copies binary into ~/.terraform.d/plugins/registry.terraform.io/hadamrd/bbox/0.1.0/<os>_<arch>/
+make test        # go test ./... -race -count=1
+make vet
+make fmt         # gofmt -w . && terraform fmt -recursive examples/
+make testacc     # acceptance tests — require a live Bbox router
 ```
-
-## Roadmap
-
-- v0.1 — `bbox_nat_rule`, `bbox_dhcp_reservation`, `bbox_wifi_ssid`, `data.bbox_wan_ip`.
-- v0.2 — DMZ, UPnP, firewall, DynDNS.
-- v0.3 — full state export as a data source.
 
 ## Contributing
 
-- Follow the code style of `bbox-cli`.
-- No new abstractions until a second resource needs them.
-- Every resource ships with an acceptance test that hits a fake HTTPS server (see bbox-cli's `httptest` pattern).
+- Follow the code style of [bbox-cli](https://github.com/hadamrd/bbox-cli).
+- No new abstractions until a second consumer demands them.
+- Every resource ships with a unit test hitting a fake HTTPS server (see the `bbox-cli` `httptest` pattern).
+- Add a `CHANGELOG.md` entry under `[Unreleased]` for every user-facing change.
 
 ## License
 

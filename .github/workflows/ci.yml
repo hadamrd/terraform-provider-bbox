@@ -23,3 +23,38 @@ jobs:
             echo "$out"
             exit 1
           fi
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive examples/
+      - name: build provider for validate
+        run: |
+          mkdir -p ~/.terraform.d/plugins/registry.terraform.io/hadamrd/bbox/0.1.0/linux_amd64
+          go build -o ~/.terraform.d/plugins/registry.terraform.io/hadamrd/bbox/0.1.0/linux_amd64/terraform-provider-bbox_v0.1.0 .
+          cat > ~/.terraformrc <<'EOF'
+          provider_installation {
+            dev_overrides {
+              "hadamrd/bbox" = "/home/runner/.terraform.d/plugins/registry.terraform.io/hadamrd/bbox/0.1.0/linux_amd64"
+            }
+            direct {}
+          }
+          EOF
+      - name: terraform validate
+        # dev_overrides makes `terraform init` unnecessary; `validate` reads the
+        # schema straight from the local plugin binary. No live router needed.
+        run: |
+          set -e
+          for ex in examples/*/; do
+            echo "== $ex =="
+            (cd "$ex" && terraform validate) || exit 1
+          done
