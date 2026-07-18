@@ -130,6 +130,11 @@ func (p *bboxProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewNATRuleResource,
 		NewDHCPReservationResource,
+		NewFirewallRuleResource,
+		NewWifiBandResource,
+		NewDynDNSResource,
+		NewHostResource,
+		NewUPnPResource,
 	}
 }
 
