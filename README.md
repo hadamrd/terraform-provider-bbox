@@ -74,6 +74,11 @@ Backed by [hadamrd/bbox-cli](https://github.com/hadamrd/bbox-cli), so authentica
 | `bbox_wifi_schedule`      | `/api/v1/wireless/scheduler` | A recurring WiFi-pause window (radios off).       |
 | `bbox_parental_control`   | `/api/v1/parentalcontrol`    | Singleton: enable + default policy.               |
 | `bbox_parental_rule`      | `/api/v1/parentalcontrol/scheduler` | A parental-control access window.          |
+| `bbox_dmz`                | `/api/v1/nat/dmz`            | Singleton single-host DMZ. Manage as `false` to assert it stays off. |
+| `bbox_wifi_guest`         | `/api/v1/wireless/guest`     | Singleton guest network (on/off + SSID).          |
+| `bbox_voip_block_anonymous` | `/api/v1/voip/blockanon/{line}` | Block anonymous calls on a line (anti-spam). |
+| `bbox_voip_schedule`      | `/api/v1/voip/scheduler`     | Recurring VoIP call-block window (DND hours).      |
+| `bbox_usb`                | `/api/v1/device/usb3`        | Singleton USB 3.0 mode toggle.                    |
 
 ```hcl
 # WiFi off on weeknights + block a MAC + weekend-only kid access

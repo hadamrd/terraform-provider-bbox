@@ -3,7 +3,7 @@ module github.com/hadamrd/terraform-provider-bbox
 go 1.25.8
 
 require (
-	github.com/hadamrd/bbox-cli v0.16.0
+	github.com/hadamrd/bbox-cli v0.17.0
 	github.com/hashicorp/terraform-plugin-framework v1.13.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.15.0
 	github.com/hashicorp/terraform-plugin-go v0.25.0

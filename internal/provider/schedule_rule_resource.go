@@ -53,6 +53,18 @@ func NewParentalRuleResource() resource.Resource {
 	}
 }
 
+// NewVoIPScheduleResource manages a recurring VoIP call-block window
+// (e.g. do-not-disturb hours). Reuses the shared scheduler-rule shape.
+func NewVoIPScheduleResource() resource.Resource {
+	return &scheduleRuleResource{
+		typeName: "voip_schedule",
+		descr:    "A recurring VoIP call-block window (e.g. do-not-disturb hours). Incoming calls are blocked during the window on the selected days.",
+		add:      func(c *client.Client, a client.SchedulerRuleArgs) (int, error) { return c.VoIPSchedulerAddRule(a) },
+		del:      func(c *client.Client, id int) error { return c.VoIPSchedulerDelRule(id) },
+		saved:    func(c *client.Client) ([]any, error) { _, s, err := c.VoIPSchedulerRules(); return s, err },
+	}
+}
+
 type scheduleRuleModel struct {
 	ID        types.Int64  `tfsdk:"id"`
 	Name      types.String `tfsdk:"name"`

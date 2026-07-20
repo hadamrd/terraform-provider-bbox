@@ -137,6 +137,11 @@ func (p *bboxProvider) Resources(_ context.Context) []func() resource.Resource {
 		NewWifiScheduleResource,
 		NewParentalControlResource,
 		NewParentalRuleResource,
+		NewDMZResource,
+		NewWifiGuestResource,
+		NewVoIPBlockAnonymousResource,
+		NewVoIPScheduleResource,
+		NewUSBResource,
 	}
 }
 
