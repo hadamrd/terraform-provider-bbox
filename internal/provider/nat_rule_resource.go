@@ -6,7 +6,6 @@ import (
 
 	"github.com/hadamrd/bbox-cli/pkg/client"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -52,11 +51,10 @@ func (r *natRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 		Description: "A NAT / port-forward rule on the Bbox.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
-				Computed:      true,
-				Description:   "Router-assigned numeric rule ID.",
-				PlanModifiers: []planmodifier.Int64{
-					// keep across updates until delete+recreate replaces it
-				},
+				Computed:    true,
+				Description: "Router-assigned numeric rule ID.",
+				// No UseStateForUnknown: Update is delete+recreate, so the id can
+				// genuinely change and must be allowed to become known-after-apply.
 			},
 			"name": schema.StringAttribute{
 				Required:    true,
@@ -192,6 +190,14 @@ func (r *natRuleResource) Read(ctx context.Context, req resource.ReadRequest, re
 		state.Protocol = types.StringValue(toStr(m["protocol"]))
 		state.RemoteIP = types.StringValue(toStr(m["ipremote"]))
 		state.Enabled = types.BoolValue(toBool(m["enable"]))
+		// skip_port_check is a client-side directive for the ADD call only; the
+		// router has no representation of it. Pin it to a concrete value so an
+		// imported/refreshed rule doesn't perpetually diff against the config
+		// default and trigger a needless delete+recreate. Preserve a prior value
+		// (e.g. from a fresh apply) when present.
+		if state.SkipPortCheck.IsNull() || state.SkipPortCheck.IsUnknown() {
+			state.SkipPortCheck = types.BoolValue(false)
+		}
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 		return
 	}
@@ -284,7 +290,7 @@ func (r *natRuleResource) Delete(ctx context.Context, req resource.DeleteRequest
 }
 
 func (r *natRuleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	importInt64ID(ctx, req, resp)
 }
 
 // natOnlyEnabledChanged returns true when the only differing attribute between

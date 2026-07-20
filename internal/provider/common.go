@@ -1,10 +1,26 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
+
+// importInt64ID adopts a resource whose `id` attribute is an Int64. The native
+// `import {}` block (and `terraform import`) hand the ID in as a string, which
+// ImportStatePassthroughID can't coerce into a number — so parse it explicitly.
+func importInt64ID(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	id, err := strconv.ParseInt(strings.TrimSpace(req.ID), 10, 64)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid import ID", fmt.Sprintf("expected an integer id, got %q", req.ID))
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
+}
 
 // sharedFromReq extracts the *SharedClient from a resource/datasource Configure
 // providerData. Returns nil on the initial nil-data call so resources don't spam
@@ -69,6 +85,67 @@ func toBool(v any) bool {
 // normaliseMAC lowercases + converts dashes to colons.
 func normaliseMAC(mac string) string {
 	return strings.ToLower(strings.ReplaceAll(mac, "-", ":"))
+}
+
+// canonicalDays is the stable day ordering used for scheduler "occurency"
+// conversion. The Bbox indexes Mon=1..Sat=6, Sun=0; we keep Sun last so diffs
+// stay stable regardless of the order the user lists days.
+var canonicalDays = []struct {
+	name  string
+	index string
+}{
+	{"mon", "1"}, {"tue", "2"}, {"wed", "3"}, {"thu", "4"}, {"fri", "5"}, {"sat", "6"}, {"sun", "0"},
+}
+
+// daysToOccurency converts a list of lowercase day names into the Bbox
+// "occurency" string (comma-separated indices) in canonical order.
+func daysToOccurency(days []string) (string, error) {
+	want := map[string]bool{}
+	for _, d := range days {
+		want[strings.ToLower(strings.TrimSpace(d))] = true
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, cd := range canonicalDays {
+		if want[cd.name] {
+			out = append(out, cd.index)
+			seen[cd.name] = true
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			return "", fmt.Errorf("invalid day %q (use mon,tue,wed,thu,fri,sat,sun)", name)
+		}
+	}
+	if len(out) == 0 {
+		return "", fmt.Errorf("at least one day is required")
+	}
+	return strings.Join(out, ","), nil
+}
+
+// occurencyToDays converts a Bbox "occurency" string back into day names in
+// canonical order, for stable round-tripping in state.
+func occurencyToDays(occ string) []string {
+	has := map[string]bool{}
+	for _, tok := range strings.Split(occ, ",") {
+		has[strings.TrimSpace(tok)] = true
+	}
+	var out []string
+	for _, cd := range canonicalDays {
+		if has[cd.index] {
+			out = append(out, cd.name)
+		}
+	}
+	return out
+}
+
+// splitIntervals splits a Bbox "HH:MM,HH:MM" interval into (start, end).
+func splitIntervals(intervals string) (string, string) {
+	parts := strings.SplitN(intervals, ",", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 }
 
 // parsePortRange parses "40960:49151" into (low, high). Returns (0,0) on empty

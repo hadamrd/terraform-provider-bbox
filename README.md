@@ -69,6 +69,37 @@ Backed by [hadamrd/bbox-cli](https://github.com/hadamrd/bbox-cli), so authentica
 | `bbox_dyndns`             | `/api/v1/dyndns`             | Singleton. DuckDNS/no-ip/ovh/etc.                 |
 | `bbox_host`               | `/api/v1/hosts/{id}`         | Rename or block a known LAN host.                 |
 | `bbox_upnp`               | `/api/v1/upnp/igd`           | Singleton toggle.                                 |
+| `bbox_wifi_acl`           | `/api/v1/wireless/acl`       | Singleton toggle for MAC filtering. Enabling can lock out WiFi. |
+| `bbox_wifi_acl_rule`      | `/api/v1/wireless/acl/rules` | A MAC access-control entry.                       |
+| `bbox_wifi_schedule`      | `/api/v1/wireless/scheduler` | A recurring WiFi-pause window (radios off).       |
+| `bbox_parental_control`   | `/api/v1/parentalcontrol`    | Singleton: enable + default policy.               |
+| `bbox_parental_rule`      | `/api/v1/parentalcontrol/scheduler` | A parental-control access window.          |
+
+```hcl
+# WiFi off on weeknights + block a MAC + weekend-only kid access
+resource "bbox_wifi_schedule" "night" {
+  name       = "School nights"
+  days       = ["mon", "tue", "wed", "thu", "fri"]
+  start_time = "23:30"
+  end_time   = "06:30"
+}
+
+resource "bbox_wifi_acl_rule" "blocked" {
+  macaddress = "aa:bb:cc:dd:ee:ff"
+}
+
+resource "bbox_parental_control" "pc" {
+  enabled        = true
+  default_policy = "Forbidden" # windows grant access
+}
+
+resource "bbox_parental_rule" "weekend" {
+  name       = "Weekend screen time"
+  days       = ["sat", "sun"]
+  start_time = "09:00"
+  end_time   = "20:00"
+}
+```
 
 ### Data sources
 

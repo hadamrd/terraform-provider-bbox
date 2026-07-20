@@ -3,7 +3,7 @@ module github.com/hadamrd/terraform-provider-bbox
 go 1.25.8
 
 require (
-	github.com/hadamrd/bbox-cli v0.15.1
+	github.com/hadamrd/bbox-cli v0.16.0
 	github.com/hashicorp/terraform-plugin-framework v1.13.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.15.0
 	github.com/hashicorp/terraform-plugin-go v0.25.0
@@ -67,6 +67,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )
-
-// Local dev override — remove once v0.15.1 (SetSessionFile + NATToggleRule + NATAddArgs.Disabled)
-// is tagged and pushed, then `go get github.com/hadamrd/bbox-cli@v0.15.1`.
